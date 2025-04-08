@@ -1,7 +1,7 @@
 FROM continuumio/miniconda3:4.10.3
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y sox git wget build-essential coreutils && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y sox git wget build-essential coreutils libgl1-mesa-glx && rm -rf /var/lib/apt/lists/*
 RUN conda create -n whisper-flamingo python=3.8 -y && \
     conda install -n whisper-flamingo -c conda-forge ffmpeg==4.2.2 -y
 SHELL ["conda", "run", "-n", "whisper-flamingo", "/bin/bash", "-c"]
