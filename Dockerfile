@@ -23,10 +23,12 @@ RUN pip install pip==24.0
 # Install av_hubert and fairseq (no cloning, submodules assumed present)
 RUN cd av_hubert && pip install -r updated_requirements.txt && cd fairseq && pip install --editable ./ && cd ../..
 
-# Rest of your Dockerfile...
 RUN mkdir -p models && \
-    wget --progress=bar:force -O models/whisper-flamingo_en-x_small.pt "https://data.csail.mit.edu/public-release-sls/whisper-flamingo/models/whisper-flamingo_en-x_small.pt" && \
-    wget --progress=bar:force -O models/large_noise_pt_noise_ft_433h_only_weights.pt "https://data.csail.mit.edu/public-release-sls/whisper-flamingo/models/large_noise_pt_noise_ft_433h_only_weights.pt"
+    wget --progress=bar:force --no-buffer -P models "https://data.csail.mit.edu/public-release-sls/whisper-flamingo/models/whisper-flamingo_en-x_small.pt" && \
+    wget --progress=bar:force --no-buffer -P models "https://data.csail.mit.edu/public-release-sls/whisper-flamingo/models/large_noise_pt_noise_ft_433h_only_weights.pt"
+
 RUN pip install -r requirements.txt
+
 EXPOSE 8000
+
 CMD ["conda", "run", "-n", "whisper-flamingo", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
