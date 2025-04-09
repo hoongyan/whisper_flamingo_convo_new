@@ -10,48 +10,37 @@ import whisper
 from utils import load_video_feats, add_noise  # Assuming these are available in your utils module
 import sys
 import uvicorn
-
+import gdown
 
 # Force DBG = False by simulating an argument
-sys.argv.append("--start")  # Add this line
+sys.argv.append("--start")
 
 # Ensure the AV-HuBERT directory is in sys.path
 av_hubert_dir = os.path.abspath("av_hubert/avhubert")
 sys.path.append(av_hubert_dir)
 
-# Explicitly import the task module to register it
-# from av_hubert.avhubert import hubert_pretraining
-
-# from fairseq import tasks
-# print("Registered tasks:", list(tasks.TASK_REGISTRY.keys()))
-
-
-
-
 app = FastAPI()
 
-# Global configuration matching your command
-model_type = "small" 
+# Global configuration
+model_type = "small"
 device = "cuda" if torch.cuda.is_available() else "cpu"
-use_av_hubert_encoder = 1  # Matches --use_av_hubert_encoder 1
-av_fusion = "separate"  # Matches --av_fusion separate
-whisper_path = "models/"  # Matches --whisper-path (default in script)
-av_hubert_path = "av_hubert/avhubert/"  # Matches --av-hubert-path
-av_hubert_ckpt = "models/large_noise_pt_noise_ft_433h_only_weights.pt"  # Matches --av-hubert-ckpt
+use_av_hubert_encoder = 1
+av_fusion = "separate"
+whisper_path = "models/"
+av_hubert_path = "av_hubert/avhubert/"
+av_hubert_ckpt = "models/large_noise_pt_noise_ft_433h_only_weights.pt"
 SAMPLE_RATE = 16000
 
-# Model request parameters
-class TranscriptionRequest(BaseModel):
-    language: str = "en"  # Matches --lang en
-    noise_snr: int = 0  # Matches --noise-snr 0
-    task: str = "transcribe"  # Default, matches script behavior
-    modalities: str = "avsr"  # Matches --modalities avsr
-    beam_size: int = 1  # Default, matches --beam-size 1
-    fp16: int = 0  # Matches --fp16 0
-    checkpoint_path: Optional[str] = "models/whisper-flamingo_en-x_small.pt"  # Matches --checkpoint-path
-    noise_fn: Optional[str] = "noise/babble/muavic/test.tsv"  # Matches --noise-fn
+# Model download logic
+WHISPER_MODEL_URL = "https://drive.google.com/uc?id=15HVr--vidDSE1AYs_VvlMSx4o77r6dvp"
+AV_HUBERT_MODEL_URL = "https://drive.google.com/uc?id=15WlAs3HIg7Xp87RDcpSZ3Bzg_qiRLJHM"
 
-# Load the Whisper-Flamingo model
+def download_model_if_missing(path, url):
+    if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        gdown.download(url, path, quiet=False)
+
+# Load the Whisper-Flamingo model (defined BEFORE it's called)
 def load_model(language="en", modalities="avsr", checkpoint_path=None, fp16=0):
     print(f"Loading model with checkpoint: {checkpoint_path}")
     try:
@@ -71,7 +60,7 @@ def load_model(language="en", modalities="avsr", checkpoint_path=None, fp16=0):
     
     if checkpoint_path:
         state_dict = torch.load(checkpoint_path, map_location=torch.device('cpu'))
-        state_dict = state_dict.get('state_dict', state_dict)  # Handle case where 'state_dict' key exists
+        state_dict = state_dict.get('state_dict', state_dict)
         state_dict_updated = {k[6:]: v for k, v in state_dict.items() if k.startswith('model.')} or state_dict
         try:
             model.load_state_dict(state_dict_updated)
@@ -84,9 +73,25 @@ def load_model(language="en", modalities="avsr", checkpoint_path=None, fp16=0):
     tokenizer = whisper.tokenizer.get_tokenizer(multilingual=False, task="transcribe")
     return model, tokenizer
 
+# Download and load models globally (AFTER load_model is defined)
+download_model_if_missing("models/whisper-flamingo_en-x_small.pt", WHISPER_MODEL_URL)
+download_model_if_missing("models/large_noise_pt_noise_ft_433h_only_weights.pt", AV_HUBERT_MODEL_URL)
+model, tokenizer = load_model()  # This should now work
+
+# Model request parameters
+class TranscriptionRequest(BaseModel):
+    language: str = "en"
+    noise_snr: int = 0
+    task: str = "transcribe"
+    modalities: str = "avsr"
+    beam_size: int = 1
+    fp16: int = 0
+    checkpoint_path: Optional[str] = "models/whisper-flamingo_en-x_small.pt"
+    noise_fn: Optional[str] = "noise/babble/muavic/test.tsv"
+
 # Process media files
 def process_media(audio_file_path, video_file_path, language, noise_snr, task, modalities, beam_size, fp16, checkpoint_path=None, noise_fn=None):
-    model, tokenizer = load_model(language, modalities, checkpoint_path, fp16)
+    global model, tokenizer  # Use the global instances
     task_type = 'translate' if task == 'X-En' else 'transcribe'
     options = whisper.DecodingOptions(
         task=task_type,
@@ -118,11 +123,11 @@ def process_media(audio_file_path, video_file_path, language, noise_snr, task, m
 
     # Load and preprocess video
     if video_file_path and modalities in ["avsr", "vsr"]:
-        video = load_video_feats(video_file_path, train=False)  # Assumes center crop, no flip
-        video = torch.tensor(video, dtype=torch.float32).unsqueeze(0)  # Ensure float32
-        video = video.permute(0, 4, 1, 2, 3)  # Shape: [1, channels, num_frames, height, width]
+        video = load_video_feats(video_file_path, train=False)
+        video = torch.tensor(video, dtype=torch.float32).unsqueeze(0)
+        video = video.permute(0, 4, 1, 2, 3)
         if device == "cuda" and fp16:
-            video = video.half().cuda()  # Converts to torch.float16
+            video = video.half().cuda()
         elif device == "cuda":
             video = video.cuda()
     else:
@@ -151,7 +156,6 @@ async def transcribe_file(
 ):
     params = TranscriptionRequest(**json.loads(params))
     
-    # Save uploaded files temporarily
     audio_file_path = video_file_path = None
     if audio_file:
         audio_file_path = f"temp_audio_{audio_file.filename}"
@@ -176,7 +180,6 @@ async def transcribe_file(
             params.noise_fn
         )
     finally:
-        # Clean up temporary files
         if audio_file_path and os.path.exists(audio_file_path):
             os.remove(audio_file_path)
         if video_file_path and os.path.exists(video_file_path):
@@ -184,6 +187,7 @@ async def transcribe_file(
     
     return result
 
+# Update port handling for Render
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-    #uvicorn.run(app, host="0.0.0.0", port=8001) #if a new port is needed
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

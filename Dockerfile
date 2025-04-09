@@ -1,3 +1,4 @@
+# uses whisper_service.py
 FROM continuumio/miniconda3:4.10.3
 WORKDIR /app
 
@@ -17,3 +18,22 @@ RUN mkdir -p models && \
 
 EXPOSE 8000
 CMD ["conda", "run", "-n", "whisper-flamingo", "uvicorn", "whisper_service:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# # uses app.py 
+# FROM continuumio/miniconda3:4.10.3
+# WORKDIR /app
+
+# RUN apt-get update && apt-get install -y sox git wget build-essential coreutils libgl1-mesa-glx && rm -rf /var/lib/apt/lists/*
+# RUN conda create -n whisper-flamingo python=3.8 -y && \
+#     conda install -n whisper-flamingo -c conda-forge ffmpeg==4.2.2 -y
+# SHELL ["conda", "run", "-n", "whisper-flamingo", "/bin/bash", "-c"]
+
+# COPY . .
+# RUN pip install pip==24.0 gdown uvicorn==0.29.0 && \
+#     cd muavic-setup && pip install -r requirements.txt && cd .. && \
+#     cd av_hubert && pip install -r updated_requirements.txt && cd fairseq && pip install --editable ./ && cd /app && \
+#     pip install -r requirements.txt
+
+# EXPOSE 8000
+# CMD ["conda", "run", "-n", "whisper-flamingo", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}"]
+
